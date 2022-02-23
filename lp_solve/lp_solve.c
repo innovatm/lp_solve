@@ -66,6 +66,7 @@ void print_help(char *argv[])
   printf("-wparopt options\n\t\toptions for parameter file:\n");
   printf("\t\t -H headername: header name for parameters. By default 'Default'\n");
   printf("-wafter\t\tWrite model after solve (useful if presolve used).\n");
+  printf("-wafters\tWrite scaled model after solve (useful to see scaling effect).\n");
   printf("-parse_only\tparse input file but do not solve\n");
   printf("-nonames\tIgnore variables and constraint names\n");
   printf("-norownames\tIgnore constraint names\n");
@@ -102,13 +103,18 @@ void print_help(char *argv[])
   printf("\t -s3: Scale to convergence using largest absolute value\n");
   printf("\t  -s:\n");
   printf("\t -s4: Numerical range-based scaling\n");
-  printf("\t -s5: Scale to convergence using logarithmic mean of all values\n");
+  printf("\t -s5: Same as -s4 -sl\n");
   printf("\t -s6: Scale based on the simple numerical range\n");
-  printf("\t -s7: Scale quadratic\n");
+  printf("\t -s7: Same as -s4 -sq\n");
   printf("These scaling rules can be combined with any of the following:\n");
-  printf("-sp\t\talso do power scaling.\n");
-  printf("-si\t\talso do Integer scaling (default).\n");
-  printf("-se\t\talso do equilibration to scale to the -1..1 range (default).\n");
+  printf("\t -sp: also do power scaling.\n");
+  printf("\t -si: also do integer scaling (default).\n");
+  printf("\t -se: also do equilibration to scale to the -1..1 range (default).\n");
+  printf("\t -sq: also do quadratic scaling.\n");
+  printf("\t -sl: Scale to convergence using logarithmic mean of all values.\n");
+  printf("\t -sd: Dynamic update.\n");
+  printf("\t -sr: Scale only rows.\n");
+  printf("\t -sc: Scale only columns.\n");
   printf("-presolve\tpresolve problem before start optimizing (rows+columns)\n");
   printf("-presolverow\tpresolve problem before start optimizing (rows only)\n");
   printf("-presolvecol\tpresolve problem before start optimizing (columns only)\n");
@@ -161,6 +167,7 @@ void print_help(char *argv[])
   printf("\t -improve4: Low-cost accuracy monitoring in the dual\n");
   printf("\t -improve8: check for primal/dual feasibility at the node level\n");
   printf("-timeout <sec>\tTimeout after sec seconds when not solution found.\n");
+  printf("-ac <accuracy>\tFail when accuracy is less then specified value.\n");
 /*
   printf("-timeoutok\tIf timeout, take the best yet found solution.\n");
 */
@@ -223,6 +230,7 @@ void print_help(char *argv[])
   printf("-Da <filename>\tDo a generic readable data dump of key lp_solve model variables\n\t\tafter solve.\n\t\tPrincipally for run difference and debugging purposes\n");
   printf("-i\t\tprint all intermediate valid solutions.\n\t\tCan give you useful solutions even if the total run time\n\t\tis too long\n");
   printf("-ia\t\tprint all intermediate (only non-zero values) valid solutions.\n\t\tCan give you useful solutions even if the total run time\n\t\tis too long\n");
+  printf("-ip\t\tprint solution with more precision\n");
   printf("-stat\t\tPrint model statistics\n");
   printf("-S <detail>\tPrint solution. If detail omitted, then -S2 is used.\n");
   printf("\t -S0: Print nothing\n");
@@ -233,6 +241,7 @@ void print_help(char *argv[])
   printf("\t -S5: Obj value+variables+constraints+duals+lp model\n");
   printf("\t -S6: Obj value+variables+constraints+duals+lp model+scales\n");
   printf("\t -S7: Obj value+variables+constraints+duals+lp model+scales+lp tableau\n");
+  printf("\t -Si: Also print solution if not feasible\n");
 }
 
 void print_cpu_times(const char *info)
@@ -534,8 +543,10 @@ int main(int argc, char *argv[])
   MYBOOL report = FALSE;
   MYBOOL nonames = FALSE, norownames = FALSE, nocolnames = FALSE;
   MYBOOL write_model_after = FALSE;
+  MYBOOL write_model_after_scaled = FALSE;
   MYBOOL noint = FALSE;
   int print_sol = -1;
+  MYBOOL print_solutions = FALSE;
   MYBOOL print_stats = FALSE;
   int floor_first = -1;
   MYBOOL do_set_bb_depthlimit = FALSE;
@@ -581,6 +592,7 @@ int main(int argc, char *argv[])
   REAL epsel = -1;
   MYBOOL do_set_break_at_value = FALSE;
   REAL break_at_value = 0;
+  REAL accuracy_error = -1;
   FILE *fpin = stdin;
   char *bfp = NULL;
   char *rxliname = NULL, *rxli = NULL, *rxlidata = NULL, *rxlioptions = NULL, *wxliname = NULL, *wxlisol = NULL, *wxli = NULL, *wxlioptions = NULL, *wxlisoloptions = NULL;
@@ -617,9 +629,27 @@ int main(int argc, char *argv[])
     else if(strcmp(argv[i], "-R") == 0)
       report = TRUE;
     else if(strcmp(argv[i], "-i") == 0)
-      print_sol = TRUE;
+    {
+      if (print_sol < 0)
+        print_sol = 0;
+      print_sol |= 1;
+    }
     else if(strcmp(argv[i], "-ia") == 0)
-      print_sol = AUTOMATIC;
+    {
+      if (print_sol < 0)
+        print_sol = 0;
+      print_sol |= AUTOMATIC;
+    }
+    else if(strcmp(argv[i], "-ip") == 0)
+    {
+      if (print_sol < 0)
+        print_sol = 0;
+      print_sol |= PRECISION;
+    }
+    else if(strcmp(argv[i], "-Si") == 0)
+    {
+        print_solutions = TRUE;
+    }
     else if(strcmp(argv[i], "-stat") == 0)
       print_stats = TRUE;
     else if(strcmp(argv[i], "-nonames") == 0)
@@ -724,6 +754,16 @@ int main(int argc, char *argv[])
       or_value(&scalemode2, SCALE_INTEGERS);
     else if(strcmp(argv[i], "-se") == 0)
       or_value(&scalemode2, SCALE_EQUILIBRATE);
+    else if(strcmp(argv[i], "-sq") == 0)
+      or_value(&scalemode2, SCALE_QUADRATIC);
+    else if(strcmp(argv[i], "-sl") == 0)
+      or_value(&scalemode2, SCALE_LOGARITHMIC);
+    else if(strcmp(argv[i], "-sd") == 0)
+      or_value(&scalemode2, SCALE_DYNUPDATE);
+    else if(strcmp(argv[i], "-sr") == 0)
+      or_value(&scalemode2, SCALE_ROWSONLY);
+    else if(strcmp(argv[i], "-sc") == 0)
+      or_value(&scalemode2, SCALE_COLSONLY);
     else if(strncmp(argv[i], "-s", 2) == 0) {
       set_value(&scalemode1, SCALE_NONE);
       scaling = SCALE_MEAN;
@@ -830,6 +870,8 @@ int main(int argc, char *argv[])
       wfmps = argv[++i];
     else if(strcmp(argv[i],"-wafter") == 0)
       write_model_after = TRUE;
+    else if(strcmp(argv[i],"-wafters") == 0)
+      write_model_after_scaled = TRUE;
     else if(strcmp(argv[i],"-degen") == 0)
       set_value(&anti_degen1, ANTIDEGEN_DEFAULT);
     else if(strcmp(argv[i],"-degenf") == 0)
@@ -965,6 +1007,8 @@ int main(int argc, char *argv[])
       obj_in_basis = FALSE;
     else if(strcmp(argv[i],"-o1") == 0)
       obj_in_basis = TRUE;
+    else if((strcmp(argv[i], "-ac") == 0) && (i + 1 < argc))
+      accuracy_error = atof(argv[++i]);
     else if(fpin == stdin) {
       filen = argv[i];
       if(*filen == '<')
@@ -1076,14 +1120,14 @@ int main(int argc, char *argv[])
     }
   }
 
-  if(!write_model_after)
+  if(!write_model_after && !write_model_after_scaled)
     write_model(lp, plp, wlp, wmps, wfmps, wxli, NULL, wxliname, wxlioptions);
 
   if(print_stats)
     print_statistics(lp);
 
   if(parse_only) {
-    if(!write_model_after) {
+    if(!write_model_after && !write_model_after_scaled) {
       delete_lp(lp);
       EndOfPgr(0);
     }
@@ -1192,6 +1236,9 @@ int main(int argc, char *argv[])
     set_scalelimit(lp, scaleloop);
   }
 
+  if (accuracy_error != -1)
+    set_break_numeric_accuracy(lp, accuracy_error);
+
   if(guessbasis != NULL) {
     REAL *guessvector, a;
     int *basisvector;
@@ -1254,8 +1301,15 @@ int main(int argc, char *argv[])
     if(!write_basis(lp, wbasname))
       fprintf(stderr, "Unable to write basis file.\n");
 
-  if(write_model_after)
+  if(write_model_after || write_model_after_scaled)
+  {
+    MYBOOL scaling_used = lp->scaling_used;
+
+    if (write_model_after_scaled)
+      lp->scaling_used = FALSE;
     write_model(lp, plp, wlp, wmps, wfmps, wxli, NULL, wxliname, wxlioptions);
+    lp->scaling_used = scaling_used;
+  }
 
   write_model(lp, FALSE, NULL, NULL, NULL, NULL, wxlisol, wxliname, wxlisoloptions);
 
@@ -1291,28 +1345,7 @@ int main(int argc, char *argv[])
   case OPTIMAL:
   case PROCBREAK:
   case FEASFOUND:
-    if ((result == SUBOPTIMAL) && (PRINT_SOLUTION >= 1))
-      printf("Suboptimal solution\n");
-
-    if (result == PRESOLVED)
-      printf("Presolved solution\n");
-
-    if (PRINT_SOLUTION >= 1)
-      print_objective(lp);
-
-    if (PRINT_SOLUTION >= 2)
-      print_solution(lp, 1);
-
-    if (PRINT_SOLUTION >= 3)
-      print_constraints(lp, 1);
-
-    if (PRINT_SOLUTION >= 4)
-      print_duals(lp);
-
-    if(tracing)
-      fprintf(stderr,
-              "Branch & Bound depth: %d\nNodes processed: %.0f\nSimplex pivots: %.0f\nNumber of equal solutions: %d\n",
-              get_max_level(lp), (REAL) get_total_nodes(lp), (REAL) get_total_iter(lp), get_solutioncount(lp));
+    print_solutions = TRUE;
     break;
   case NOMEMORY:
     if (PRINT_SOLUTION >= 1)
@@ -1338,10 +1371,39 @@ int main(int argc, char *argv[])
     if (PRINT_SOLUTION >= 1)
       printf("User aborted\n");
     break;
+  case ACCURACYERROR:
+    if (PRINT_SOLUTION >= 1)
+      printf("Accuracy error\n");
+    break;
   default:
     if (PRINT_SOLUTION >= 1)
       printf("lp_solve failed\n");
     break;
+  }
+
+  if (print_solutions) {
+    if ((result == SUBOPTIMAL) && (PRINT_SOLUTION >= 1))
+      printf("Suboptimal solution\n");
+
+    if (result == PRESOLVED)
+      printf("Presolved solution\n");
+
+    if (PRINT_SOLUTION >= 1)
+      print_objective(lp);
+
+    if (PRINT_SOLUTION >= 2)
+      print_solution(lp, 1);
+
+    if (PRINT_SOLUTION >= 3)
+      print_constraints(lp, 1);
+
+    if (PRINT_SOLUTION >= 4)
+      print_duals(lp);
+
+    if(tracing)
+      fprintf(stderr,
+              "Branch & Bound depth: %d\nNodes processed: %.0f\nSimplex pivots: %.0f\nNumber of equal solutions: %d\n",
+              get_max_level(lp), (REAL) get_total_nodes(lp), (REAL) get_total_iter(lp), get_solutioncount(lp));
   }
 
   if (PRINT_SOLUTION >= 7)

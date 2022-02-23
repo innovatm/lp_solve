@@ -5,7 +5,8 @@ REM This batch file compiles the lpsolve libraries with the Microsoft Visual C/C
 set c=cl
 
 REM determine platform (win32/win64)
-echo main(){printf("SET PLATFORM=win%%d\n", (int) (sizeof(void *)*8));}>platform.c
+echo #include "stdio.h">platform.c
+echo void main(){printf("SET PLATFORM=win%%d\n", (int) (sizeof(void *)*8));}>>platform.c
 %c% /nologo platform.c /Feplatform.exe
 del platform.c
 platform.exe >platform.bat
@@ -19,7 +20,7 @@ set src=../lp_MDO.c ../shared/commonlib.c ../shared/mmio.c ../shared/myblas.c ..
 
 rc lpsolve.rc
 rem use /MT to remove dependence on msvcrt*.dll calls kernel libs directly about 200K larger dll.
-%c% -W1 -I.. -I../shared -I../bfp -I../bfp/bfp_LUSOL -I../bfp/bfp_LUSOL/LUSOL -I../colamd /LD /MT /O2 /Zp8 /Gz -D_WINDLL -D_USRDLL -DWIN32 -D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE -DYY_NEVER_INTERACTIVE -DPARSER_LP -DINVERSE_ACTIVE=INVERSE_LUSOL -DRoleIsExternalInvEngine %src% lpsolve.res /Febin\%PLATFORM%\lpsolve55.dll
+%c% -W1 -I.. -I../shared -I../bfp -I../bfp/bfp_LUSOL -I../bfp/bfp_LUSOL/LUSOL -I../colamd /LD /MT /O2 /Zp8 /Gz -D_WINDLL -DWIN32 -D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE -DYY_NEVER_INTERACTIVE -DPARSER_LP -DINVERSE_ACTIVE=INVERSE_LUSOL -DRoleIsExternalInvEngine %src% lpsolve.res ..\lp_solve.def /Febin\%PLATFORM%\lpsolve55.dll
 editbin /LARGEADDRESSAWARE bin\%PLATFORM%\lpsolve55.dll
 
 rem http://msdn2.microsoft.com/en-us/library/ms235229.aspx

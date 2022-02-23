@@ -173,13 +173,13 @@ static void add_int_var(parse_parm *pp, char *name, short int_decl)
     char buf[256];
 
     sprintf(buf, "Unknown variable %s declared integer, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   else if(pp->coldata[hp->index].must_be_int) {
     char buf[256];
 
     sprintf(buf, "Variable %s declared integer more than once, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   else {
     pp->coldata[hp->index].must_be_int = TRUE;
@@ -188,14 +188,14 @@ static void add_int_var(parse_parm *pp, char *name, short int_decl)
         char buf[256];
 
         sprintf(buf, "Variable %s: lower bound on variable redefined", name);
-        error(pp, NORMAL, buf);
+        error(pp, IMPORTANT, buf);
       }
       pp->coldata[hp->index].lowbo = 0;
       if(pp->coldata[hp->index].upbo < DEF_INFINITE) {
         char buf[256];
 
         sprintf(buf, "Variable %s: upper bound on variable redefined", name);
-        error(pp, NORMAL, buf);
+        error(pp, IMPORTANT, buf);
       }
       pp->coldata[hp->index].upbo = 1;
     }
@@ -214,13 +214,13 @@ static void add_sec_var(parse_parm *pp, char *name)
     char buf[256];
 
     sprintf(buf, "Unknown variable %s declared semi-continuous, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   else if(pp->coldata[hp->index].must_be_sec) {
     char buf[256];
 
     sprintf(buf, "Variable %s declared semi-continuous more than once, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   else
     pp->coldata[hp->index].must_be_sec = TRUE;
@@ -234,7 +234,7 @@ int set_sec_threshold(parse_parm *pp, char *name, REAL threshold)
     char buf[256];
 
     sprintf(buf, "Unknown variable %s declared semi-continuous, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
     return(FALSE);
   }
 
@@ -243,7 +243,7 @@ int set_sec_threshold(parse_parm *pp, char *name, REAL threshold)
 
     pp->coldata[hp->index].must_be_sec = FALSE;
     sprintf(buf, "Variable %s declared semi-continuous, but it has a non-negative lower bound (%f), ignored", name, pp->coldata[hp->index].lowbo);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   if (threshold > pp->coldata[hp->index].lowbo)
     pp->coldata[hp->index].lowbo = threshold;
@@ -259,16 +259,32 @@ static void add_free_var(parse_parm *pp, char *name)
     char buf[256];
 
     sprintf(buf, "Unknown variable %s declared free, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   else if(pp->coldata[hp->index].must_be_free) {
     char buf[256];
 
     sprintf(buf, "Variable %s declared free more than once, ignored", name);
-    error(pp, NORMAL, buf);
+    error(pp, IMPORTANT, buf);
   }
   else
+  {
+    if(pp->coldata[hp->index].lowbo != -DEF_INFINITE * (REAL) 10.0) {
+      char buf[256];
+
+      sprintf(buf, "Variable %s: lower bound on variable redefined", name);
+      error(pp, IMPORTANT, buf);
+    }
+
+    if(pp->coldata[hp->index].upbo < DEF_INFINITE) {
+      char buf[256];
+
+      sprintf(buf, "Variable %s: upper bound on variable redefined", name);
+      error(pp, IMPORTANT, buf);
+    }
+
     pp->coldata[hp->index].must_be_free = TRUE;
+  }
 }
 
 static int add_sos_name(parse_parm *pp, char *name)
@@ -757,10 +773,12 @@ int store_bounds(parse_parm *pp, int warn)
     }
 
     /* check for empty range */
+    /*
     if((warn) && (pp->coldata[h_tab_p->index].upbo + tol < pp->coldata[h_tab_p->index].lowbo)) {
       error(pp, CRITICAL, "Error: bound contradicts earlier bounds");
       return(FALSE);
     }
+    */
   }
   else /* pp->tmp_store.value = 0 ! */ {
     char buf[256];
@@ -982,6 +1000,18 @@ static int readinput(parse_parm *pp, lprec *lp)
       }
 
       if(lp != NULL) {
+        if((!pp->coldata[hp->index].must_be_sec) && (pp->coldata[hp->index].upbo + tol < pp->coldata[hp->index].lowbo)) {
+          char buf[256];
+
+          FREE(SOSrowdata);
+          FREE(negateAndSOS);
+          FREE(row);
+          FREE(rowno);
+          sprintf(buf, "Error: variable %s: bound contradicts earlier bounds\n", hp->name);
+          error(NULL, CRITICAL, buf);
+          return(FALSE);
+        }
+
         add_columnex(lp, count, row, rowno);
         /* check for bound */
         if(pp->coldata[hp->index].lowbo == -DEF_INFINITE * 10.0)
